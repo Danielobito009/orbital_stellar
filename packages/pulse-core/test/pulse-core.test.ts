@@ -1000,6 +1000,95 @@ describe("pulse-core EventEngine", () => {
     });
   });
 
+  describe("manage_data → data.set / data.cleared", () => {
+    function makeManageDataRecord(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+      return {
+        type: "manage_data",
+        source_account: "GSRC",
+        data_name: "federation",
+        data_value: "aGVsbG8=",
+        created_at: "2026-04-28T14:00:00.000Z",
+        ...overrides,
+      };
+    }
+
+    it("emits data.set when data_value is present", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GSRC");
+      const handler = vi.fn();
+      watcher.on("data.set", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeManageDataRecord());
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "data.set",
+          source: "GSRC",
+          name: "federation",
+          value: "aGVsbG8=",
+          timestamp: "2026-04-28T14:00:00.000Z",
+        })
+      );
+    });
+
+    it("emits data.cleared when data_value is null", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GSRC");
+      const handler = vi.fn();
+      watcher.on("data.cleared", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeManageDataRecord({ data_value: null }));
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "data.cleared", source: "GSRC", value: null })
+      );
+    });
+
+    it("emits data.cleared when data_value is absent", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GSRC");
+      const handler = vi.fn();
+      watcher.on("data.cleared", handler);
+
+      engine.start();
+      const record = makeManageDataRecord();
+      delete record.data_value;
+      latestStream().handlers.onmessage(record);
+
+      expect(handler).toHaveBeenCalledOnce();
+      expect(handler).toHaveBeenCalledWith(expect.objectContaining({ type: "data.cleared", value: null }));
+    });
+
+    it("does not emit if source_account is missing", () => {
+      const engine = new EventEngine({ network: "testnet", logger: log });
+      const watcher = engine.subscribe("GSRC");
+      const handler = vi.fn();
+      watcher.on("*", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeManageDataRecord({ source_account: "" }));
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it("does not emit to unrelated watchers", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      engine.subscribe("GSRC");
+      const other = engine.subscribe("GOTHER");
+      const otherHandler = vi.fn();
+      other.on("*", otherHandler);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeManageDataRecord());
+
+      expect(otherHandler).not.toHaveBeenCalled();
+    });
+  });
+
   describe("change_trust → trustline.*", () => {
     function makeChangeTrustRecord(overrides: Record<string, unknown>): Record<string, unknown> {
       return {

@@ -9,6 +9,8 @@ import type {
   BumpSequenceEvent,
   BumpSequenceEventType,
   CoreConfig,
+  DataEvent,
+  DataEventType,
   EngineStatus,
   Network,
   NormalizedEvent,
@@ -33,7 +35,8 @@ type NormalizedEventOrPending =
   | TrustlineEvent
   | AccountMergeEvent
   | OfferEvent
-  | BumpSequenceEvent;
+  | BumpSequenceEvent
+  | DataEvent;
 
 type StreamCallbacks = {
   onmessage: (record: unknown) => void;
@@ -437,6 +440,10 @@ export class EventEngine {
       return this.normalizeBumpSequence(r, record);
     }
 
+    if (r.type === "manage_data") {
+      return this.normalizeManageData(r, record);
+    }
+
     if (r.type === "change_trust") {
       return this.normalizeChangeTrust(r, record);
     }
@@ -531,6 +538,33 @@ export class EventEngine {
       source: r.source_account,
       bump_to: r.bump_to as string,
       timestamp: r.created_at,
+      raw,
+    };
+  }
+
+  private normalizeManageData(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): DataEvent | null {
+    if (typeof r.source_account !== "string" || r.source_account === "") {
+      this.log.warn("[pulse-core] normalize() dropping manage_data record: source_account is missing.");
+      return null;
+    }
+
+    if (typeof r.data_name !== "string" || r.data_name === "") {
+      this.log.warn("[pulse-core] normalize() dropping manage_data record: data_name is missing.");
+      return null;
+    }
+
+    const value = r.data_value == null ? null : String(r.data_value);
+    const type: DataEventType = value !== null ? "data.set" : "data.cleared";
+
+    return {
+      type,
+      source: r.source_account,
+      name: r.data_name,
+      value,
+      timestamp: typeof r.created_at === "string" ? r.created_at : "",
       raw,
     };
   }
@@ -712,6 +746,15 @@ export class EventEngine {
       const watcher = this.registry.get(event.source);
       if (watcher && this.passesFilter(event.source, event)) {
         watcher.emit("account.bump_sequence", event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "data.set" || event.type === "data.cleared") {
+      const watcher = this.registry.get(event.source);
+      if (watcher && this.passesFilter(event.source, event)) {
+        watcher.emit(event.type, event);
         watcher.emit("*", event);
       }
       return;
