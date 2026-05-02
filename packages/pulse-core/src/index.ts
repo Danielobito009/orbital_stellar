@@ -12,6 +12,7 @@ export type PaymentEventType =
   | "payment.self";
 /** Event type for account options changes. */
 export type AccountOptionsEventType = "account.options_changed";
+export type LiquidityPoolEventType = "lp.deposited" | "lp.withdrawn";
 /** Event type for account creation. */
 export type AccountEventType = "account.created";
 export type ClaimableCreatedEventType = "claimable.created";
@@ -156,6 +157,31 @@ export type DataEvent = {
   raw: unknown;
 };
 
+export type LiquidityPoolReserve = {
+  asset: string;
+  amount: string;
+};
+
+export type LiquidityPoolDepositEvent = {
+  type: "lp.deposited";
+  source: string;
+  pool_id: string;
+  reserves_deposited: LiquidityPoolReserve[];
+  shares_received: string;
+  timestamp: string;
+  raw: unknown;
+};
+
+export type LiquidityPoolWithdrawEvent = {
+  type: "lp.withdrawn";
+  source: string;
+  pool_id: string;
+  reserves_received: LiquidityPoolReserve[];
+  shares_redeemed: string;
+  timestamp: string;
+  raw: unknown;
+};
+
 /**
  * A normalized account creation event from the Stellar network.
  */
@@ -221,7 +247,9 @@ export type NormalizedEvent =
   | BumpSequenceEvent
   | DataEvent
   | ClaimableCreatedEvent
-  | ClaimableClaimedEvent;
+  | ClaimableClaimedEvent
+  | LiquidityPoolDepositEvent
+  | LiquidityPoolWithdrawEvent;
 
 /**
  * A notification emitted by the EventEngine during reconnection attempts.

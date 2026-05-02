@@ -1608,4 +1608,176 @@ describe("pulse-core EventEngine", () => {
       );
     });
   });
+
+  describe("liquidity_pool_deposit → lp.deposited", () => {
+    function makeLPDepositRecord(
+      overrides: Record<string, unknown> = {}
+    ): Record<string, unknown> {
+      return {
+        type: "liquidity_pool_deposit",
+        source_account: "GSRC",
+        created_at: "2026-04-30T10:00:00.000Z",
+        liquidity_pool_id: "pool123",
+        reserves_deposited: [
+          { asset: "XLM", amount: "1000.0000000" },
+          { asset: "USDC:GISSUER", amount: "500.0000000" },
+        ],
+        shares_received: "700.0000000",
+        ...overrides,
+      };
+    }
+
+    it("normalizes liquidity_pool_deposit correctly", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const normalize = (
+        engine as unknown as { normalize(record: unknown): unknown }
+      ).normalize.bind(engine);
+
+      const result = normalize(makeLPDepositRecord());
+
+      expect(result).toEqual({
+        type: "lp.deposited",
+        source: "GSRC",
+        pool_id: "pool123",
+        reserves_deposited: [
+          { asset: "XLM", amount: "1000.0000000" },
+          { asset: "USDC:GISSUER", amount: "500.0000000" },
+        ],
+        shares_received: "700.0000000",
+        timestamp: "2026-04-30T10:00:00.000Z",
+        raw: expect.any(Object),
+      });
+    });
+
+    it("routes lp.deposited to the source watcher and wildcard", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GSRC");
+      const specific = vi.fn();
+      const wildcard = vi.fn();
+      watcher.on("lp.deposited", specific);
+      watcher.on("*", wildcard);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeLPDepositRecord());
+
+      expect(specific).toHaveBeenCalledOnce();
+      expect(specific).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "lp.deposited", source: "GSRC", pool_id: "pool123" })
+      );
+      expect(wildcard).toHaveBeenCalledOnce();
+    });
+
+    it("does not route to unrelated watchers", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const unrelated = engine.subscribe("GUNRELATED");
+      const handler = vi.fn();
+      unrelated.on("lp.deposited", handler);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeLPDepositRecord());
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it("drops record and warns when a required field is missing", () => {
+      const engine = new EventEngine({ network: "testnet", logger: log });
+      const normalize = (
+        engine as unknown as { normalize(record: unknown): unknown }
+      ).normalize.bind(engine);
+
+      const result = normalize(makeLPDepositRecord({ liquidity_pool_id: undefined }));
+
+      expect(result).toBeNull();
+      expect(log.warn).toHaveBeenCalledWith(
+        '[pulse-core] normalize() dropping liquidity_pool_deposit record: field "liquidity_pool_id" is missing.',
+        expect.objectContaining({ record: expect.any(Object) })
+      );
+    });
+
+    it("drops record and warns when reserves_deposited is not an array", () => {
+      const engine = new EventEngine({ network: "testnet", logger: log });
+      const normalize = (
+        engine as unknown as { normalize(record: unknown): unknown }
+      ).normalize.bind(engine);
+
+      const result = normalize(makeLPDepositRecord({ reserves_deposited: "invalid" }));
+
+      expect(result).toBeNull();
+      expect(log.warn).toHaveBeenCalledWith(
+        "[pulse-core] normalize() dropping liquidity_pool_deposit record: reserves_deposited is not an array.",
+        expect.objectContaining({ record: expect.any(Object) })
+      );
+    });
+  });
+
+  describe("liquidity_pool_withdraw → lp.withdrawn", () => {
+    function makeLPWithdrawRecord(
+      overrides: Record<string, unknown> = {}
+    ): Record<string, unknown> {
+      return {
+        type: "liquidity_pool_withdraw",
+        source_account: "GSRC",
+        created_at: "2026-04-30T11:00:00.000Z",
+        liquidity_pool_id: "pool123",
+        reserves_received: [
+          { asset: "XLM", amount: "900.0000000" },
+          { asset: "USDC:GISSUER", amount: "450.0000000" },
+        ],
+        shares: "600.0000000",
+        ...overrides,
+      };
+    }
+
+    it("normalizes liquidity_pool_withdraw correctly", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const normalize = (
+        engine as unknown as { normalize(record: unknown): unknown }
+      ).normalize.bind(engine);
+
+      const result = normalize(makeLPWithdrawRecord());
+
+      expect(result).toEqual({
+        type: "lp.withdrawn",
+        source: "GSRC",
+        pool_id: "pool123",
+        reserves_received: [
+          { asset: "XLM", amount: "900.0000000" },
+          { asset: "USDC:GISSUER", amount: "450.0000000" },
+        ],
+        shares_redeemed: "600.0000000",
+        timestamp: "2026-04-30T11:00:00.000Z",
+        raw: expect.any(Object),
+      });
+    });
+
+    it("routes lp.withdrawn to the source watcher and wildcard", () => {
+      const engine = new EventEngine({ network: "testnet" });
+      const watcher = engine.subscribe("GSRC");
+      const specific = vi.fn();
+      const wildcard = vi.fn();
+      watcher.on("lp.withdrawn", specific);
+      watcher.on("*", wildcard);
+
+      engine.start();
+      latestStream().handlers.onmessage(makeLPWithdrawRecord());
+
+      expect(specific).toHaveBeenCalledOnce();
+      expect(wildcard).toHaveBeenCalledOnce();
+    });
+
+    it("drops record and warns when shares field is missing", () => {
+      const engine = new EventEngine({ network: "testnet", logger: log });
+      const normalize = (
+        engine as unknown as { normalize(record: unknown): unknown }
+      ).normalize.bind(engine);
+
+      const result = normalize(makeLPWithdrawRecord({ shares: undefined }));
+
+      expect(result).toBeNull();
+      expect(log.warn).toHaveBeenCalledWith(
+        '[pulse-core] normalize() dropping liquidity_pool_withdraw record: field "shares" is missing.',
+        expect.objectContaining({ record: expect.any(Object) })
+      );
+    });
+  });
 });

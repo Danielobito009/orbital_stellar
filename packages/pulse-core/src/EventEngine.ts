@@ -15,6 +15,8 @@ import type {
   DataEvent,
   DataEventType,
   EngineStatus,
+  LiquidityPoolDepositEvent,
+  LiquidityPoolWithdrawEvent,
   Network,
   NormalizedEvent,
   OfferEvent,
@@ -41,7 +43,9 @@ type NormalizedEventOrPending =
   | BumpSequenceEvent
   | DataEvent
   | ClaimableCreatedEvent
-  | ClaimableClaimedEvent;
+  | ClaimableClaimedEvent
+  | LiquidityPoolDepositEvent
+  | LiquidityPoolWithdrawEvent;
 
 type StreamCallbacks = {
   onmessage: (record: unknown) => void;
@@ -487,6 +491,14 @@ export class EventEngine {
       return this.normalizeClaimClaimableBalance(r, record);
     }
 
+    if (r.type === "liquidity_pool_deposit") {
+      return this.normalizeLiquidityPoolDeposit(r, record);
+    }
+
+    if (r.type === "liquidity_pool_withdraw") {
+      return this.normalizeLiquidityPoolWithdraw(r, record);
+    }
+
     return null;
   }
 
@@ -778,6 +790,86 @@ export class EventEngine {
     };
   }
 
+  private normalizeLiquidityPoolDeposit(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): LiquidityPoolDepositEvent | null {
+    const requiredFields = [
+      "source_account",
+      "created_at",
+      "liquidity_pool_id",
+      "shares_received",
+    ] as const;
+
+    for (const field of requiredFields) {
+      if (typeof r[field] !== "string" || r[field] === "") {
+        this.log.warn(
+          `[pulse-core] normalize() dropping liquidity_pool_deposit record: field "${field}" is missing.`,
+          { record: raw }
+        );
+        return null;
+      }
+    }
+
+    if (!Array.isArray(r.reserves_deposited)) {
+      this.log.warn(
+        "[pulse-core] normalize() dropping liquidity_pool_deposit record: reserves_deposited is not an array.",
+        { record: raw }
+      );
+      return null;
+    }
+
+    return {
+      type: "lp.deposited",
+      source: r.source_account as string,
+      pool_id: r.liquidity_pool_id as string,
+      reserves_deposited: r.reserves_deposited as Array<{ asset: string; amount: string }>,
+      shares_received: r.shares_received as string,
+      timestamp: r.created_at as string,
+      raw,
+    };
+  }
+
+  private normalizeLiquidityPoolWithdraw(
+    r: Record<string, unknown>,
+    raw: unknown
+  ): LiquidityPoolWithdrawEvent | null {
+    const requiredFields = [
+      "source_account",
+      "created_at",
+      "liquidity_pool_id",
+      "shares",
+    ] as const;
+
+    for (const field of requiredFields) {
+      if (typeof r[field] !== "string" || r[field] === "") {
+        this.log.warn(
+          `[pulse-core] normalize() dropping liquidity_pool_withdraw record: field "${field}" is missing.`,
+          { record: raw }
+        );
+        return null;
+      }
+    }
+
+    if (!Array.isArray(r.reserves_received)) {
+      this.log.warn(
+        "[pulse-core] normalize() dropping liquidity_pool_withdraw record: reserves_received is not an array.",
+        { record: raw }
+      );
+      return null;
+    }
+
+    return {
+      type: "lp.withdrawn",
+      source: r.source_account as string,
+      pool_id: r.liquidity_pool_id as string,
+      reserves_received: r.reserves_received as Array<{ asset: string; amount: string }>,
+      shares_redeemed: r.shares as string,
+      timestamp: r.created_at as string,
+      raw,
+    };
+  }
+
   private passesFilter(address: string, event: NormalizedEvent): boolean {
     const filter = this.filters.get(address);
     if (!filter) return true;
@@ -903,6 +995,15 @@ export class EventEngine {
       const watcher = this.registry.get(event.claimant);
       if (watcher && this.passesFilter(event.claimant, event)) {
         watcher.emit("claimable.claimed", event);
+        watcher.emit("*", event);
+      }
+      return;
+    }
+
+    if (event.type === "lp.deposited" || event.type === "lp.withdrawn") {
+      const watcher = this.registry.get(event.source);
+      if (watcher && this.passesFilter(event.source, event)) {
+        watcher.emit(event.type, event);
         watcher.emit("*", event);
       }
       return;
