@@ -64,4 +64,4 @@ Soroban contract events are coming in Phase 1 (Q2–Q3 2026). See the [roadmap](
 
 You install the SDKs into your own Node.js or edge backend and operate them on the infrastructure you already use. A separately-built **Orbital Cloud** managed runtime — multi-region orchestration, persistent webhook registries, replay, observability — is in development for teams who don't want to operate event subscriptions themselves.
 
-A reference Express composition lives at `apps/server` in the GitHub repo if you want to see the SDKs wired together end-to-end before building your own.
+A reference Next.js composition lives at `apps/web/app/api/events/[address]/route.ts` in the GitHub repo — copy and adapt it if you want to see the SDKs wired together end-to-end before building your own backend.

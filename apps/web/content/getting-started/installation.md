@@ -50,18 +50,24 @@ Pick the one that matches your runtime. The signing side (`WebhookDelivery`) req
 
 `@orbital/pulse-notify` is browser-only — it uses `EventSource`, which doesn't exist in Node. In Next.js App Router, mark consuming components with `"use client"`. In Remix or Vite SSR, gate the hook behind a client-only boundary.
 
-## Trying the reference server (optional)
+## Trying the reference composition (optional)
 
-Want to see the SDKs composed end-to-end before building your own backend? Clone the repo and run the reference Express server:
+Want to see the SDKs composed end-to-end before building your own backend? Clone the repo and run the marketing site — it ships a sandboxed Next.js route handler that subscribes to a Stellar address and streams events as SSE:
 
 ```bash
 git clone https://github.com/orbital/orbital.git
 cd orbital
 pnpm install
-NETWORK=testnet API_KEY=dev-key pnpm --filter @orbital/server dev
+NEXT_PUBLIC_NETWORK=testnet pnpm --filter orbital/web dev
 ```
 
-It exposes a webhook registration API and an SSE endpoint on `http://localhost:3000` — useful for prototyping React-hook integrations against testnet. **It's a worked example, not a production self-host pitch** — for production, install the SDKs into your own backend or use Orbital Cloud (in development).
+Open `http://localhost:3000` for the site, or hit the route directly:
+
+```bash
+curl -N http://localhost:3000/api/events/GABC...
+```
+
+The reference handler lives at `apps/web/app/api/events/[address]/route.ts` — copy and adapt it. **It's sandboxed for the public demo** (1 concurrent stream per IP, 25s session cap); strip the limits in `apps/web/lib/demo-limits.ts` for production use, or use Orbital Cloud (in development).
 
 ## Next step
 
