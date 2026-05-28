@@ -43,7 +43,7 @@ Always call `engine.stop()` in your shutdown path.
 
 ## Browser-side with React hooks
 
-`@orbital/pulse-notify` opens an `EventSource` connection to a backend that exposes Orbital events as Server-Sent Events. The reference `apps/server` does this; you can stand up an equivalent SSE endpoint with about 30 lines of `pulse-core` + Express in your own backend.
+`@orbital/pulse-notify` opens an `EventSource` connection to a backend that exposes Orbital events as Server-Sent Events. The `apps/web` marketing site ships a Next.js route handler that does this (`app/api/events/[address]/route.ts`); you can copy that or stand up an equivalent SSE endpoint with about 30 lines of `pulse-core` + Express in your own backend.
 
 ### Standing up an SSE endpoint
 

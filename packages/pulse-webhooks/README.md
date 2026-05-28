@@ -152,7 +152,7 @@ Uses constant-time comparison and Web Crypto for HMAC-SHA256 verification.
 
 - **Verify every signature.** `verifyWebhook` uses constant-time comparison.
 - **Treat the secret like a password.** Store it in a secrets manager, not a config file.
-- **Enforce HTTPS.** The reference server (`apps/server`) rejects non-HTTPS URLs at registration time.
+- **Enforce HTTPS.** `WebhookDelivery` rejects non-HTTPS URLs unless `allowPrivateNetworks` is set; enforce the same at any layer where users supply target URLs.
 - **Bound the payload.** On the receiver side, cap body size with `express.raw({ type: "application/json", limit: "100kb" })` or equivalent.
 
 ## Network safety
