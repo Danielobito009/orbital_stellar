@@ -17,6 +17,7 @@ import type {
   ContractSubscribeOptions,
   ContractSubscriptionFilter,
   CoreConfig,
+  EngineStatus,
   DataEvent,
   DataEventType,
   EngineStatus,
@@ -94,6 +95,8 @@ export class EventEngine {
   private pendingReconnectSuccessAttempt: number | null = null;
   private readonly reconnectConfig: Required<ReconnectConfig>;
   private isRunning = false;
+  private lastEventAt: string | null = null;
+  private horizonCursor?: string;
   private filters: Map<string, (event: NormalizedEvent) => boolean> = new Map();
   private log: Logger;
   private lastEventAt: string | null = null;
@@ -278,6 +281,7 @@ export class EventEngine {
     this.lastEventAt = null;
     this.closeStream();
     this.isRunning = false;
+    this.horizonCursor = undefined;
 
     this.notifyWatchers("engine.stopped", {
       type: "engine.stopped",
@@ -290,10 +294,41 @@ export class EventEngine {
     }
   }
 
+  status(): EngineStatus {
+    const horizon = {
+      running: this.isRunning,
+      lastEventAt: this.lastEventAt,
+      reconnectAttempt: this.reconnectAttempt,
+      cursor: this.horizonCursor,
+    };
+
+    const soroban = {
+      running: false,
+      lastEventAt: null,
+      reconnectAttempt: 0,
+    };
+
+    const sources = { horizon, soroban };
+    const lastEventAt = [horizon.lastEventAt, soroban.lastEventAt].filter(
+      (value): value is string => value !== null
+    );
+
+    return {
+      running: horizon.running || soroban.running,
+      watcherCount: this.registry.size,
+      lastEventAt: lastEventAt.length
+        ? lastEventAt.sort()[lastEventAt.length - 1]
+        : null,
+      reconnectAttempt: Math.max(horizon.reconnectAttempt, soroban.reconnectAttempt),
+      sources,
+    };
+  }
+
   private openStream(isReconnect: boolean): void {
     this.closeStream();
     this.clearReconnectTimer();
     this.isRunning = true;
+    this.horizonCursor = "now";
     this.pendingReconnectSuccessAttempt = isReconnect
       ? this.reconnectAttempt
       : null;
@@ -319,6 +354,7 @@ export class EventEngine {
           return;
         }
 
+        this.lastEventAt = event.timestamp;
         this.route(event);
       },
       onerror: (error) => {

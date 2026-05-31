@@ -10,6 +10,25 @@ export type { ClaimPredicate } from "./claimPredicate.js";
 /** The Stellar network to connect to. */
 export type Network = "mainnet" | "testnet";
 
+export type SourceStatus = {
+  running: boolean;
+  lastEventAt: string | null;
+  reconnectAttempt: number;
+  cursor?: string;
+};
+
+export type EngineStatus = {
+  running: boolean;
+  watcherCount: number;
+  lastEventAt: string | null;
+  reconnectAttempt: number;
+  sources: {
+    horizon: SourceStatus;
+    soroban: SourceStatus;
+  };
+};
+
+export type PaymentEventType = "payment.received" | "payment.sent";
 /** Passphrase strings for each supported Stellar network. */
 export const NETWORK_PASSPHRASES = {
   mainnet: "Public Global Stellar Network ; September 2015",
