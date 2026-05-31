@@ -307,6 +307,8 @@ export type NormalizedEvent =
 export type WatcherNotification = {
   /** The type of reconnection notification. */
   type: WatcherNotificationType;
+  /** Human-friendly label of the subscription that received this notification, if one was set. */
+  name?: string;
   /** The current reconnection attempt number. */
   attempt: number;
   /** The delay in milliseconds before the next reconnection attempt (for "engine.reconnecting" events). */
@@ -378,6 +380,8 @@ export type SubscribeOptions = {
    *  Return `false` to suppress delivery. If the predicate throws, the event
    *  is suppressed and a warning is logged — the engine continues running. */
   filter?: (event: NormalizedEvent) => boolean;
+  /** Optional human-friendly label for observability — appears in log lines and lifecycle notifications. */
+  name?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -445,4 +449,6 @@ export type ContractSubscriptionFilter = {
 /** Options for subscribeContract(). */
 export type ContractSubscribeOptions = {
   filters?: ContractSubscriptionFilter[];
+  /** Optional human-friendly label for observability — appears in log lines and lifecycle notifications. */
+  name?: string;
 };

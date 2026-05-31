@@ -89,6 +89,7 @@ export class EventEngine {
   private server: Horizon.Server;
   private registry: Map<string, Watcher> = new Map();
   private contractRegistry: Map<string, { watcher: Watcher; filters: ContractSubscriptionFilter[] }> = new Map();
+  private subscriptionNames: Map<string, string> = new Map();
   private stopStream: HorizonStreamStopper | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
@@ -144,19 +145,23 @@ export class EventEngine {
     if (existingWatcher) {
       if (options?.filter) {
         this.log.warn(
-          `[pulse-core] subscribe() called for address ${address} which already has an active watcher — filter option ignored.`
+          `[pulse-core] subscribe() called for ${this.describeSubscription(address)} which already has an active watcher — filter option ignored.`
         );
       }
       return existingWatcher;
     }
 
     const watcher = new Watcher(address);
+    if (options?.name !== undefined) {
+      this.subscriptionNames.set(address, options.name);
+    }
     if (options?.filter) {
       this.filters.set(address, options.filter);
     }
     watcher.addStopHandler(() => {
       this.registry.delete(address);
       this.filters.delete(address);
+      this.subscriptionNames.delete(address);
     });
     this.registry.set(address, watcher);
     return watcher;
@@ -195,8 +200,12 @@ export class EventEngine {
 
     const watcher = new Watcher(id);
     const filters = options?.filters ?? [];
+    if (options?.name !== undefined) {
+      this.subscriptionNames.set(id, options.name);
+    }
     watcher.addStopHandler(() => {
       this.contractRegistry.delete(id);
+      this.subscriptionNames.delete(id);
     });
     this.contractRegistry.set(id, { watcher, filters });
     return watcher;
@@ -216,12 +225,14 @@ export class EventEngine {
    * tearing it down.
    */
   unsubscribeAllContracts(): void {
-    const notification = {
-      type: "engine.stopped" as const,
-      attempt: 0,
-      emittedAt: new Date().toISOString(),
-    };
-    for (const entry of this.contractRegistry.values()) {
+    for (const [id, entry] of this.contractRegistry.entries()) {
+      const name = this.subscriptionNames.get(id);
+      const notification = {
+        type: "engine.stopped" as const,
+        attempt: 0,
+        emittedAt: new Date().toISOString(),
+        ...(name !== undefined ? { name } : {}),
+      };
       entry.watcher.emit("engine.stopped", notification);
       entry.watcher.stop();
     }
@@ -549,9 +560,26 @@ export class EventEngine {
     eventType: WatcherNotificationType,
     event: WatcherNotification
   ): void {
-    for (const watcher of this.registry.values()) {
-      watcher.emit(eventType, event);
+    for (const [address, watcher] of this.registry.entries()) {
+      const name = this.subscriptionNames.get(address);
+      watcher.emit(
+        eventType,
+        name !== undefined ? { ...event, name } : event
+      );
     }
+
+    for (const [id, { watcher }] of this.contractRegistry.entries()) {
+      const name = this.subscriptionNames.get(id);
+      watcher.emit(
+        eventType,
+        name !== undefined ? { ...event, name } : event
+      );
+    }
+  }
+
+  private describeSubscription(key: string): string {
+    const name = this.subscriptionNames.get(key);
+    return name !== undefined ? `${name} (${key})` : key;
   }
 
   private normalize(record: unknown): NormalizedEventOrPending | null {
@@ -1127,7 +1155,7 @@ export class EventEngine {
       return filter(event);
     } catch (err) {
       this.log.warn(
-        `[pulse-core] subscribe() filter threw for address ${address} — treating as reject.`,
+        `[pulse-core] subscribe() filter threw for ${this.describeSubscription(address)} — treating as reject.`,
         err
       );
       return false;
