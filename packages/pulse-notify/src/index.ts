@@ -172,3 +172,8 @@ export {
   type StellarConnectionStatusProps,
   type StellarConnectionStatusState,
 } from "./StellarConnectionStatus.js";
+
+export {
+  StellarEventBoundary,
+  type StellarEventBoundaryProps,
+} from "./StellarEventBoundary.js";
