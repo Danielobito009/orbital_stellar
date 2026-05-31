@@ -525,7 +525,7 @@ export class EventEngine {
       const requiredFields = ["to", "from", "amount", "created_at"] as const;
       for (const field of requiredFields) {
         if (typeof r[field] !== "string" || r[field] === "") {
-          this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record: raw });
+          this.log.warn("[pulse-core] normalize() dropping payment record.", { field, record });
           return null;
         }
       }
@@ -1057,13 +1057,17 @@ export class EventEngine {
   ): ContractInvokedEvent | null {
     if (typeof r.contract_id !== "string" || r.contract_id === "") return null;
     if (typeof r.function !== "string") return null;
+    if (typeof r.ledger !== "number") return null;
+    if (typeof r.txHash !== "string") return null;
+    if (typeof r.created_at !== "string") return null;
     return {
       type: "contract.invoked",
       contractId: r.contract_id,
       function: r.function,
-      topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
-      data: r.data ?? null,
-      timestamp: typeof r.created_at === "string" ? r.created_at : "",
+      args: Array.isArray(r.args) ? (r.args as unknown[]) : [],
+      ledger: r.ledger,
+      txHash: r.txHash,
+      timestamp: r.created_at,
       raw,
     };
   }
@@ -1073,12 +1077,21 @@ export class EventEngine {
     raw: unknown
   ): ContractEmittedEvent | null {
     if (typeof r.contract_id !== "string" || r.contract_id === "") return null;
+    if (typeof r.ledger !== "number") return null;
+    if (typeof r.eventId !== "string") return null;
+    if (typeof r.txHash !== "string") return null;
+    if (typeof r.created_at !== "string") return null;
     return {
       type: "contract.emitted",
       contractId: r.contract_id,
       topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
       data: r.data ?? null,
-      timestamp: typeof r.created_at === "string" ? r.created_at : "",
+      decodedData: r.decodedData,
+      ledger: r.ledger,
+      eventId: r.eventId,
+      txHash: r.txHash,
+      inSuccessfulContractCall: Boolean(r.inSuccessfulContractCall),
+      timestamp: r.created_at,
       raw,
     };
   }
@@ -1092,14 +1105,14 @@ export class EventEngine {
     } catch (err) {
       this.log.warn(
         `[pulse-core] subscribe() filter threw for address ${address} — treating as reject.`,
-        err
+        err instanceof Error ? { error: err.message } : { error: String(err) }
       );
       return false;
     }
   }
 
   private matchesContractFilters(
-    event: { type: string; contractId: string; topics: string[] },
+    event: ContractInvokedEvent | ContractEmittedEvent,
     filters: ContractSubscriptionFilter[]
   ): boolean {
     // No filters = match everything
@@ -1110,9 +1123,15 @@ export class EventEngine {
       if (f.type !== undefined && f.type !== event.type) return false;
       if (f.contractIds !== undefined && !f.contractIds.includes(event.contractId)) return false;
       if (f.topicFilters !== undefined) {
-        for (let i = 0; i < f.topicFilters.length; i++) {
-          const pattern = f.topicFilters[i];
-          if (pattern !== null && pattern !== event.topics[i]) return false;
+        // Only ContractEmittedEvent has topics
+        if (event.type === "contract.emitted") {
+          for (let i = 0; i < f.topicFilters.length; i++) {
+            const pattern = f.topicFilters[i];
+            if (pattern !== null && pattern !== event.topics[i]) return false;
+          }
+        } else {
+          // ContractInvokedEvent doesn't have topics, so topicFilters don't apply
+          return false;
         }
       }
       return true;
@@ -1314,31 +1333,7 @@ export class EventEngine {
   }
 }
 
-export interface ContractInvokedEvent {
-  type: "contract_invoked";
-  id: string;
-  pagingToken: string;
-  contractId: string;
-  txHash: string;
-  ledger: number;
-  ledgerClosedAt: string;
-  inSuccessfulContractCall: boolean;
-  raw: any;
-}
 
-export interface ContractEmittedEvent {
-  type: "contract_emitted";
-  id: string;
-  pagingToken: string;
-  contractId: string;
-  txHash: string;
-  ledger: number;
-  ledgerClosedAt: string;
-  topics: string[];
-  value: string;
-  inSuccessfulContractCall: boolean;
-  raw: any;
-}
 
 /**
  * Normalizes a raw Soroban RPC event into a typed domain event structure.
@@ -1352,7 +1347,7 @@ export function normalizeContractEvent(rawRpcEvent: any): ContractInvokedEvent |
   }
 
   // 2. Validate mandatory base identification parameters
-  const requiredFields = ["id", "pagingToken", "contractId", "txHash", "ledger", "ledgerClosedAt", "type"];
+  const requiredFields = ["contractId", "txHash", "ledger", "type"];
   for (const field of requiredFields) {
     if (rawRpcEvent[field] === undefined || rawRpcEvent[field] === null) {
       console.warn(`[pulse-core] Dropping malformed Soroban event: missing required field "${field}".`, rawRpcEvent);
@@ -1361,48 +1356,48 @@ export function normalizeContractEvent(rawRpcEvent: any): ContractInvokedEvent |
   }
 
   const {
-    id,
-    pagingToken,
     contractId,
     txHash,
     ledger,
-    ledgerClosedAt,
     type,
-    inSuccessfulContractCall,
-    topic,
-    value
+    created_at,
   } = rawRpcEvent;
 
   // 3. Conditional evaluation mappings based on the event subtype
   if (type === "system" || type === "diagnostic") {
+    if (typeof rawRpcEvent.function !== "string") {
+      console.warn("[pulse-core] Dropping malformed contract invoked event: missing function field.", rawRpcEvent);
+      return null;
+    }
     return {
-      type: "contract_invoked",
-      id: String(id),
-      pagingToken: String(pagingToken),
+      type: "contract.invoked",
       contractId: String(contractId),
+      function: String(rawRpcEvent.function),
+      args: Array.isArray(rawRpcEvent.args) ? (rawRpcEvent.args as unknown[]) : [],
       txHash: String(txHash),
       ledger: Number(ledger),
-      ledgerClosedAt: String(ledgerClosedAt),
-      inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
+      timestamp: typeof created_at === "string" ? created_at : new Date().toISOString(),
       raw: rawRpcEvent,
     };
   } else if (type === "contract") {
+    const topic = rawRpcEvent.topic;
+    const value = rawRpcEvent.value;
     if (!Array.isArray(topic) || value === undefined || value === null) {
       console.warn("[pulse-core] Dropping malformed contract emitted event: missing topics array or data payload.", rawRpcEvent);
       return null;
     }
 
     return {
-      type: "contract_emitted",
-      id: String(id),
-      pagingToken: String(pagingToken),
+      type: "contract.emitted",
       contractId: String(contractId),
-      txHash: String(txHash),
-      ledger: Number(ledger),
-      ledgerClosedAt: String(ledgerClosedAt),
       topics: topic.map((t: any) => String(t)),
-      value: String(value),
-      inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
+      data: value,
+      decodedData: rawRpcEvent.decodedData,
+      ledger: Number(ledger),
+      eventId: typeof rawRpcEvent.id === "string" ? rawRpcEvent.id : "",
+      txHash: String(txHash),
+      inSuccessfulContractCall: Boolean(rawRpcEvent.inSuccessfulContractCall),
+      timestamp: typeof created_at === "string" ? created_at : new Date().toISOString(),
       raw: rawRpcEvent,
     };
   }
