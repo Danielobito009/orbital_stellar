@@ -1446,13 +1446,17 @@ export class EventEngine {
   ): ContractInvokedEvent | null {
     if (typeof r.contract_id !== "string" || r.contract_id === "") return null;
     if (typeof r.function !== "string") return null;
+    if (typeof r.ledger !== "number") return null;
+    if (typeof r.txHash !== "string") return null;
+    if (typeof r.created_at !== "string") return null;
     return {
       type: "contract.invoked",
       contractId: toContractAddress(r.contract_id),
       function: r.function,
-      topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
-      data: r.data ?? null,
-      timestamp: typeof r.created_at === "string" ? r.created_at : "",
+      args: Array.isArray(r.args) ? (r.args as unknown[]) : [],
+      ledger: r.ledger,
+      txHash: r.txHash,
+      timestamp: r.created_at,
       raw,
     };
   }
@@ -1462,12 +1466,21 @@ export class EventEngine {
     raw: unknown
   ): ContractEmittedEvent | null {
     if (typeof r.contract_id !== "string" || r.contract_id === "") return null;
+    if (typeof r.ledger !== "number") return null;
+    if (typeof r.eventId !== "string") return null;
+    if (typeof r.txHash !== "string") return null;
+    if (typeof r.created_at !== "string") return null;
     return {
       type: "contract.emitted",
       contractId: toContractAddress(r.contract_id),
       topics: Array.isArray(r.topics) ? (r.topics as string[]) : [],
       data: r.data ?? null,
-      timestamp: typeof r.created_at === "string" ? r.created_at : "",
+      decodedData: r.decodedData,
+      ledger: r.ledger,
+      eventId: r.eventId,
+      txHash: r.txHash,
+      inSuccessfulContractCall: Boolean(r.inSuccessfulContractCall),
+      timestamp: r.created_at,
       raw,
     };
   }
@@ -1499,9 +1512,15 @@ export class EventEngine {
       if (f.type !== undefined && f.type !== event.type) return false;
       if (f.contractIds !== undefined && !f.contractIds.includes(event.contractId)) return false;
       if (f.topicFilters !== undefined) {
-        for (let i = 0; i < f.topicFilters.length; i++) {
-          const pattern = f.topicFilters[i];
-          if (pattern !== null && pattern !== event.topics[i]) return false;
+        // Only ContractEmittedEvent has topics
+        if (event.type === "contract.emitted") {
+          for (let i = 0; i < f.topicFilters.length; i++) {
+            const pattern = f.topicFilters[i];
+            if (pattern !== null && pattern !== event.topics[i]) return false;
+          }
+        } else {
+          // ContractInvokedEvent doesn't have topics, so topicFilters don't apply
+          return false;
         }
       }
       return true;
@@ -1835,12 +1854,9 @@ export function normalizeContractEvent(
   }
 
   const {
-    id,
-    pagingToken,
     contractId,
     txHash,
     ledger,
-    ledgerClosedAt,
     type,
     inSuccessfulContractCall,
     topic,
@@ -1848,15 +1864,18 @@ export function normalizeContractEvent(
   } = e;
 
   if (type === "system" || type === "diagnostic") {
+    if (typeof rawRpcEvent.function !== "string") {
+      console.warn("[pulse-core] Dropping malformed contract invoked event: missing function field.", rawRpcEvent);
+      return null;
+    }
     return {
-      type: "contract_invoked",
-      id: String(id),
-      pagingToken: String(pagingToken),
+      type: "contract.invoked",
       contractId: String(contractId),
+      function: String(rawRpcEvent.function),
+      args: Array.isArray(rawRpcEvent.args) ? (rawRpcEvent.args as unknown[]) : [],
       txHash: String(txHash),
       ledger: Number(ledger),
-      ledgerClosedAt: String(ledgerClosedAt),
-      inSuccessfulContractCall: Boolean(inSuccessfulContractCall),
+      timestamp: typeof created_at === "string" ? created_at : new Date().toISOString(),
       raw: rawRpcEvent,
     };
   }
@@ -1871,9 +1890,7 @@ export function normalizeContractEvent(
     }
 
     return {
-      type: "contract_emitted",
-      id: String(id),
-      pagingToken: String(pagingToken),
+      type: "contract.emitted",
       contractId: String(contractId),
       txHash: String(txHash),
       ledger: Number(ledger),

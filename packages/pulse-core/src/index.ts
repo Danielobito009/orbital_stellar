@@ -472,11 +472,15 @@ export type ContractInvokedEvent = {
   contractId: ContractAddress;
   /** The function name that was invoked. */
   function: string;
-  /** Ordered list of topic strings (XDR-encoded or decoded). */
-  topics: string[];
-  /** Arbitrary event data payload. */
-  data: unknown;
+  /** Ordered list of arguments passed to the function. */
+  args: unknown[];
+  /** The ledger sequence number where the invocation occurred. */
+  ledger: number;
+  /** The transaction hash of the transaction containing this invocation. */
+  txHash: string;
+  /** ISO 8601 timestamp of the invocation. */
   timestamp: string;
+  /** The original raw record from the Soroban API. */
   raw: unknown;
 };
 
@@ -497,6 +501,7 @@ export type ContractEmittedEvent = {
    */
   decodedData?: unknown;
   timestamp: string;
+  /** The original raw record from the Soroban API. */
   raw: unknown;
 };
 
