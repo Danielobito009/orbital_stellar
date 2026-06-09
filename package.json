@@ -13,8 +13,7 @@
   "pnpm": {
     "overrides": {
       "path-to-regexp": "0.1.13",
-      "vite": "7.3.3",
-      "axios": ">=1.15.2"
+      "vite": "7.3.3"
     }
   }
 }
